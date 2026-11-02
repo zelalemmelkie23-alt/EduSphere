@@ -1,0 +1,112 @@
+{
+  "info": {
+    "name": "EduSphere Phase 2 - Authentication and RBAC",
+    "description": "API checks for login/logout, session protection, user administration, roles, permissions, and audit logs. Configure adminEmail and adminPassword with an already provisioned test account. Postman stores the HttpOnly cookie in its cookie jar.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "adminEmail", "value": "" },
+    { "key": "adminPassword", "value": "" },
+    { "key": "roleId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Unauthorized access is rejected",
+      "request": { "method": "GET", "url": "{{baseUrl}}/users" },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Unauthenticated request is rejected', () => pm.response.to.have.status(401));",
+          "pm.test('Response uses the standard error shape', () => pm.expect(pm.response.json().error.code).to.eql('UNAUTHENTICATED'));"
+        ]}
+      }]
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"email\":\"{{adminEmail}}\",\"password\":\"{{adminPassword}}\"}" },
+        "url": "{{baseUrl}}/auth/login"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+          "pm.test('Response does not expose a token or password hash', () => { const body = pm.response.json(); pm.expect(body.data.token).to.be.undefined; pm.expect(JSON.stringify(body)).not.to.include('password_hash'); });"
+        ]}
+      }]
+    },
+    {
+      "name": "Current session identity",
+      "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Authenticated identity is returned', () => pm.response.to.have.status(200));",
+          "pm.test('Identity contains permission and role lists', () => { const user = pm.response.json().data.user; pm.expect(user.roles).to.be.an('array'); pm.expect(user.permissions).to.be.an('array'); });"
+        ]}
+      }]
+    },
+    {
+      "name": "List users",
+      "request": { "method": "GET", "url": "{{baseUrl}}/users?limit=50&offset=0" },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Authorized user list is returned', () => pm.response.to.have.status(200));",
+          "pm.test('No user password hashes are returned', () => pm.expect(JSON.stringify(pm.response.json())).not.to.include('password_hash'));"
+        ]}
+      }]
+    },
+    {
+      "name": "List roles and permissions",
+      "request": { "method": "GET", "url": "{{baseUrl}}/roles" }
+    },
+    {
+      "name": "List permissions",
+      "request": { "method": "GET", "url": "{{baseUrl}}/permissions" }
+    },
+    {
+      "name": "Last Super Admin cannot be deactivated",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"isActive\":false}" },
+        "url": "{{baseUrl}}/users/1"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Last active Super Admin is protected', () => pm.response.to.have.status(409));",
+          "pm.test('Response identifies the protected account', () => pm.expect(pm.response.json().error.code).to.eql('LAST_ACTIVE_SUPER_ADMIN'));"
+        ]}
+      }]
+    },
+    {
+      "name": "Audit events",
+      "request": { "method": "GET", "url": "{{baseUrl}}/audit-logs?limit=50&offset=0" }
+    },
+    {
+      "name": "Logout",
+      "request": { "method": "POST", "url": "{{baseUrl}}/auth/logout" },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Logout succeeds', () => pm.response.to.have.status(200));"
+        ]}
+      }]
+    },
+    {
+      "name": "Session is rejected after logout",
+      "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" },
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('Logged-out session is rejected', () => pm.response.to.have.status(401));"
+        ]}
+      }]
+    }
+  ]
+}

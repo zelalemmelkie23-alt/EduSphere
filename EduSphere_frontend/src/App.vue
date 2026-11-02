@@ -1,9 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useHealthCheck } from './composables/useHealthCheck'
+import { authState, signOut } from './services/auth'
 
 const language = ref('en')
 const activePage = ref('dashboard')
+const logoutError = ref('')
+const router = useRouter()
 const { databaseStatus, connectionError, checkDatabase } = useHealthCheck()
 
 const copy = {
@@ -22,6 +26,8 @@ const copy = {
     reports: 'Reports',
     administration: 'Administration',
     healthPage: 'System health',
+    logout: 'Sign out',
+    logoutFailed: 'Unable to sign out. Please try again.',
     welcome: 'A clearer view of school life.',
     overview: 'Your school management workspace, designed around the academic year.',
     currentYear: 'CURRENT ACADEMIC YEAR',
@@ -66,6 +72,8 @@ const copy = {
     reports: 'ሪፖርቶች',
     administration: 'አስተዳደር',
     healthPage: 'የስርዓት ጤና',
+    logout: 'ውጣ',
+    logoutFailed: 'መውጣት አልተቻለም። እንደገና ይሞክሩ።',
     welcome: 'የትምህርት ቤት ሕይወትን በግልጽ ይመልከቱ።',
     overview: 'በትምህርት ዘመኑ ላይ የተመሰረተ የትምህርት ቤት አስተዳደር መድረክ።',
     currentYear: 'የአሁኑ የትምህርት ዘመን',
@@ -116,7 +124,39 @@ const workspaces = [
   { id: 'administration', icon: 'settings', note: 'administrationNote' },
 ]
 
+const workspacePermissions = {
+  admissions: ['admissions.read'],
+  students: ['students.read'],
+  academics: ['academics.read'],
+  teaching: ['teaching.read'],
+  attendance: ['attendance.read'],
+  assessments: ['assessments.read'],
+  timetable: ['timetable.read'],
+  records: ['records.read'],
+  reports: ['reports.read'],
+  administration: ['users.manage', 'roles.manage', 'permissions.manage', 'audit.read'],
+}
+
+const visibleWorkspaces = computed(() => {
+  const user = authState.user
+  if (!user) return []
+  if (user.roles.includes('Super Admin')) return workspaces
+  return workspaces.filter((item) =>
+    workspacePermissions[item.id].some((permission) => user.permissions.includes(permission)),
+  )
+})
+
 const selectedWorkspace = computed(() => workspaces.find((item) => item.id === activePage.value))
+
+async function logout() {
+  logoutError.value = ''
+  try {
+    await signOut()
+    await router.replace({ name: 'login' })
+  } catch {
+    logoutError.value = t.value.logoutFailed
+  }
+}
 
 onMounted(checkDatabase)
 </script>
@@ -149,7 +189,7 @@ onMounted(checkDatabase)
         </button>
         <div class="nav-caption nav-caption-spaced">{{ t.modules }}</div>
         <button
-          v-for="item in workspaces"
+          v-for="item in visibleWorkspaces"
           :key="item.id"
           class="nav-item"
           :class="{ active: activePage === item.id }"
@@ -182,7 +222,12 @@ onMounted(checkDatabase)
           <span>{{ t.database }}: {{ t[databaseStatus] || t.disconnected }}</span>
           <span class="refresh-icon" aria-hidden="true">↻</span>
         </button>
+        <div class="account-area">
+          <span class="account-name">{{ authState.user?.fullName }}</span>
+          <button class="logout-button" type="button" @click="logout">{{ t.logout }}</button>
+        </div>
       </header>
+      <p v-if="logoutError" class="logout-error" role="alert">{{ logoutError }}</p>
 
       <div class="page-container">
         <template v-if="activePage === 'dashboard'">
@@ -228,12 +273,12 @@ onMounted(checkDatabase)
               <h2>{{ t.modules }}</h2>
               <p>{{ t.modulesDescription }}</p>
             </div>
-            <span class="module-count">10</span>
+            <span class="module-count">{{ visibleWorkspaces.length }}</span>
           </section>
 
           <section class="workspace-grid">
             <button
-              v-for="item in workspaces"
+              v-for="item in visibleWorkspaces"
               :key="item.id"
               class="workspace-card"
               @click="activePage = item.id"
@@ -316,6 +361,11 @@ button { font: inherit; }
 .breadcrumb { display: flex; align-items: center; gap: 11px; color: #8a93a3; font-size: 11px; }
 .breadcrumb strong { color: #2b3447; font-weight: 600; }
 .crumb-separator { color: #c8cdd7; }
+.account-area { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.account-name { max-width: 180px; overflow: hidden; color: #566176; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.logout-button { border: 1px solid #e3e7ef; border-radius: 7px; padding: 7px 10px; color: #536bd5; background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
+.logout-button:hover { border-color: #cfd6f6; background: #f7f8ff; }
+.logout-error { margin: 0; padding: 9px 42px; color: #b43e48; background: #fff1f1; font-size: 12px; }
 .connection-pill { display: flex; align-items: center; gap: 8px; border: 1px solid #e8ebf0; border-radius: 20px; padding: 7px 10px; color: #707a8b; background: #fff; font-size: 10px; cursor: pointer; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #d3a33c; }
 .status-connected .status-dot { background: #45ac80; box-shadow: 0 0 0 3px #45ac801a; }
@@ -381,9 +431,13 @@ h1,h2,p { margin-top: 0; }
   .nav-item { width: auto; flex: 0 0 auto; gap: 7px; padding: 9px; font-size: 10px; }
   .nav-item:first-child { margin-right: 4px; }
   .main-content { margin-left: 0; }
-  .topbar { position: static; height: 55px; padding: 0 17px; }
+  .topbar { position: static; height: 55px; gap: 6px; padding: 0 12px; }
   .breadcrumb { font-size: 10px; }
-  .connection-pill { max-width: 165px; gap: 6px; overflow: hidden; font-size: 9px; white-space: nowrap; }
+  .account-name { display: none; }
+  .account-area { gap: 5px; }
+  .logout-button { padding: 7px; }
+  .connection-pill { max-width: 135px; gap: 6px; overflow: hidden; padding: 6px; font-size: 8px; white-space: nowrap; }
+  .logout-error { padding: 8px 17px; }
   .page-container { padding: 24px 17px 40px; }
   .welcome-row { align-items: flex-start; flex-direction: column; }
   .welcome-copy h1 { font-size: 26px; }

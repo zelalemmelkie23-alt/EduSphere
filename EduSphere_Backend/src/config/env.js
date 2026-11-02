@@ -12,6 +12,8 @@ module.exports = Object.freeze({
   environment: process.env.NODE_ENV || "development",
   port: readPositiveInteger("PORT", 3000),
   frontendOrigin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
+  sessionCookieName: "edusphere_session",
+  secureSessionCookie: process.env.NODE_ENV === "production",
   database: Object.freeze({
     host: process.env.DB_HOST || "127.0.0.1",
     port: readPositiveInteger("DB_PORT", 3036),
